@@ -15,8 +15,11 @@
 package unikontainers
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -110,4 +113,26 @@ func TestConfineToContainerRootfs(t *testing.T) {
 			assert.Equal(t, tt.expected, got)
 		})
 	}
+}
+
+func TestExecuteHooksRunsHooksInOrder(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "order")
+	hook := func(n, delay string) specs.Hook {
+		return specs.Hook{
+			Path: "/bin/sh",
+			Args: []string{"sh", "-c", "sleep " + delay + "; echo " + n + " >> " + out},
+		}
+	}
+	u := &Unikontainer{
+		State: &specs.State{ID: "hooks-order"},
+		Spec: &specs.Spec{Hooks: &specs.Hooks{
+			CreateRuntime: []specs.Hook{hook("1", "0.3"), hook("2", "0"), hook("3", "0")},
+		}},
+	}
+
+	require.NoError(t, u.ExecuteHooks("CreateRuntime"))
+
+	got, err := os.ReadFile(out)
+	require.NoError(t, err)
+	assert.Equal(t, "1\n2\n3\n", string(got))
 }
